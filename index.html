@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GRN TAT: Dock to Stock</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Mosaic Wellness inward operations</p>
+        <h1>GRN TAT: Dock to Stock</h1>
+      </div>
+      <div class="top-actions">
+        <span id="connectionStatus" class="status-pill status-neutral">Loading</span>
+        <button id="refreshButton" class="button">Refresh</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary-band" aria-label="SLA summary">
+        <div class="metric">
+          <span>Avg unload to GRN</span>
+          <strong id="metricUnloadGrn">-</strong>
+        </div>
+        <div class="metric">
+          <span>Avg GRN to putaway</span>
+          <strong id="metricGrnPutaway">-</strong>
+        </div>
+        <div class="metric">
+          <span>Avg dock to stock</span>
+          <strong id="metricDockStock">-</strong>
+        </div>
+        <div class="metric">
+          <span>SLA breaches</span>
+          <strong id="metricBreaches">-</strong>
+        </div>
+        <div class="metric">
+          <span>P0/P1 pending</span>
+          <strong id="metricP0P1">-</strong>
+        </div>
+      </section>
+
+      <section class="filters" aria-label="Dashboard filters">
+        <label>
+          Priority
+          <select id="priorityFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
+          Status
+          <select id="statusFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
+          Ageing
+          <select id="ageingFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
+          Warehouse
+          <select id="warehouseFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
+          Vendor
+          <select id="vendorFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
+          From
+          <input id="fromDateFilter" type="date">
+        </label>
+        <label>
+          To
+          <input id="toDateFilter" type="date">
+        </label>
+      </section>
+
+      <nav class="tabs" aria-label="Dashboard views">
+        <button class="tab is-active" data-tab="overall">Overall TAT</button>
+        <button class="tab" data-tab="pending">Pending Actions</button>
+        <button class="tab" data-tab="priority">Priority Queue</button>
+        <button class="tab" data-tab="sla">SLA Summary</button>
+        <button class="tab" data-tab="sources">Source Health</button>
+      </nav>
+
+      <section class="view-header">
+        <div>
+          <h2 id="viewTitle">Overall Dock to Stock TAT</h2>
+          <p id="lastRefresh">Last refresh: -</p>
+        </div>
+        <button id="exportButton" class="button">Export CSV</button>
+      </section>
+
+      <section id="tableHost" class="table-host" aria-live="polite"></section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="sample-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
