@@ -110,7 +110,7 @@ main {
 
 .summary-band {
   display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -122,6 +122,12 @@ main {
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
+}
+
+.metric:nth-child(5),
+.metric:nth-child(6) {
+  border-color: #f7c566;
+  background: #fffaf0;
 }
 
 .metric span {
@@ -279,6 +285,12 @@ tr:last-child td {
   background: #e5e7eb;
 }
 
+.badge-inventory-missing,
+.row-inventory-missing {
+  color: #344054;
+  background: #eef2f6;
+}
+
 .badge-delayed,
 .row-delayed {
   color: var(--red);
@@ -300,6 +312,45 @@ tr:last-child td {
   color: var(--muted);
   font-weight: 700;
   text-align: center;
+}
+
+.sla-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.sla-card {
+  min-height: 116px;
+  padding: 16px;
+  background: #fbfcfd;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.sla-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.sla-card strong {
+  display: block;
+  margin: 8px 0;
+  font-size: 26px;
+}
+
+.sla-card small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.sla-details {
+  border-top: 1px solid var(--line);
 }
 
 @media (max-width: 1100px) {

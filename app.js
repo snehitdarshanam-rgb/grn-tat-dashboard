@@ -7,6 +7,7 @@
     currentRows: [],
     loading: false
   };
+  const dateTimeKeyPattern = /(date|time|timestamp|fetched_at|last_refresh|pending_since|generated_at)/i;
 
   const views = {
     overall: {
@@ -18,6 +19,7 @@
         ['sku_code', 'SKU code'],
         ['sku_name', 'SKU name'],
         ['supplier_vendor', 'Vendor'],
+        ['supplier_vendor_group', 'Vendor group'],
         ['warehouse', 'Warehouse'],
         ['reporting_time_ist', 'Reporting time'],
         ['unloading_start_time_ist', 'Unloading start'],
@@ -82,7 +84,9 @@
     sources: {
       title: 'Source Health',
       rows: function () {
-        return (state.data.source_status || []).concat(state.data.error_log || []);
+        return (state.data.source_status || [])
+          .concat(state.data.error_log || [])
+          .concat(state.data.row_audit || []);
       },
       columns: [
         ['report_type', 'Report type'],
@@ -95,7 +99,17 @@
         ['level', 'Level'],
         ['stage', 'Stage'],
         ['message', 'Message'],
-        ['error', 'Error']
+        ['error', 'Error'],
+        ['source', 'Source'],
+        ['row_number', 'Row'],
+        ['action', 'Action'],
+        ['reason', 'Reason'],
+        ['facility', 'Facility'],
+        ['invoice_number', 'Invoice'],
+        ['sku_code', 'SKU'],
+        ['grn_number', 'GRN'],
+        ['putaway_number', 'Putaway'],
+        ['details', 'Details']
       ]
     }
   };
@@ -227,11 +241,13 @@
   }
 
   function populateFilters() {
-    setOptions('priorityFilter', uniqueValues(state.data.priority_grn_queue || [], 'priority'));
+    setOptions('priorityFilter', uniqueValues(state.data.priority_grn_queue || [], 'priority', priorityLabel));
     setOptions('statusFilter', uniqueValues(state.data.overall_tat || [], 'status'));
     setOptions('ageingFilter', uniqueValues(state.data.pending_actions || [], 'ageing_bucket'));
     setOptions('warehouseFilter', uniqueValues(state.data.overall_tat || [], 'warehouse'));
-    setOptions('vendorFilter', uniqueValues(state.data.overall_tat || [], 'supplier_vendor'));
+    setOptions('vendorFilter', uniqueValues(state.data.overall_tat || [], 'supplier_vendor_group', function (value, row) {
+      return value || normalizeVendorName(row.supplier_vendor);
+    }));
   }
 
   function setOptions(id, values) {
@@ -249,10 +265,11 @@
     }
   }
 
-  function uniqueValues(rows, key) {
+  function uniqueValues(rows, key, formatter) {
     const seen = {};
     rows.forEach(function (row) {
-      const value = String(row[key] || '').trim();
+      const rawValue = row[key];
+      const value = String(formatter ? formatter(rawValue, row) : rawValue || '').trim();
       if (value) {
         seen[value] = true;
       }
@@ -272,13 +289,16 @@
     setText('metricGrnPutaway', formatDays(summary.avg_grn_to_putaway_days));
     setText('metricDockStock', formatDays(summary.avg_dock_to_stock_days));
     setText('metricBreaches', valueOrDash(summary.sla_breach_count));
-    setText('metricP0P1', valueOrDash(Number(summary.p0_pending_count || 0) + Number(summary.p1_pending_count || 0)));
+    setText('metricP0', valueOrDash(summary.p0_pending_count));
+    setText('metricP1', valueOrDash(summary.p1_pending_count));
+    setText('metricPendingGrn', valueOrDash(summary.pending_grn_count));
+    setText('metricPendingPutaway', valueOrDash(summary.pending_putaway_count));
   }
 
   function renderMeta() {
     const meta = state.data.meta || {};
     const lastRefresh = meta.last_refresh_ist || (state.data.sla_summary || {}).last_refresh_ist || '-';
-    setText('lastRefresh', 'Last refresh: ' + lastRefresh);
+    setText('lastRefresh', 'Last refresh: ' + displayValue('last_refresh_ist', lastRefresh));
   }
 
   function renderTable() {
@@ -289,6 +309,10 @@
 
     const host = document.getElementById('tableHost');
     host.innerHTML = '';
+    if (state.activeTab === 'sla') {
+      renderSlaView(host);
+      return;
+    }
     if (!rows.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
@@ -324,17 +348,76 @@
     host.appendChild(table);
   }
 
+  function renderSlaView(host) {
+    const summary = state.data.sla_summary || {};
+    const urgent = Number(summary.p0_pending_count || 0) + Number(summary.p1_pending_count || 0);
+    const cards = [
+      ['Avg unload to GRN', formatDays(summary.avg_unloading_to_grn_days), 'Clean average, excluding negative source-date errors'],
+      ['Avg GRN to putaway', formatDays(summary.avg_grn_to_putaway_days), 'From matched or approved tracker fallback rows'],
+      ['Avg dock to stock', formatDays(summary.avg_dock_to_stock_days), 'Completed lines only'],
+      ['SLA breaches', valueOrDash(summary.sla_breach_count), 'Open or completed lines crossing configured SLA'],
+      ['Urgent GRN pending', valueOrDash(urgent), 'P0 plus P1 pending GRN lines'],
+      ['Inventory missing', valueOrDash(summary.inventory_missing_priority_count), 'Pending SKUs not found in active FG inventory'],
+      ['Completed', valueOrDash(summary.completed_count), 'Lines fully docked to stock'],
+      ['Pending GRN / Putaway', valueOrDash(summary.pending_grn_count) + ' / ' + valueOrDash(summary.pending_putaway_count), 'Open operational handoffs']
+    ];
+
+    const panel = document.createElement('div');
+    panel.className = 'sla-panel';
+    cards.forEach(function (card) {
+      const item = document.createElement('article');
+      item.className = 'sla-card';
+      const label = document.createElement('span');
+      label.textContent = card[0];
+      const value = document.createElement('strong');
+      value.textContent = card[1];
+      const note = document.createElement('small');
+      note.textContent = card[2];
+      item.appendChild(label);
+      item.appendChild(value);
+      item.appendChild(note);
+      panel.appendChild(item);
+    });
+    host.appendChild(panel);
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['Metric', 'Value'].forEach(function (label) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    state.currentRows.forEach(function (row) {
+      const tr = document.createElement('tr');
+      ['metric', 'value'].forEach(function (key) {
+        appendCell(tr, key, row);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    const details = document.createElement('div');
+    details.className = 'sla-details';
+    details.appendChild(table);
+    host.appendChild(details);
+  }
+
   function appendCell(tr, key, row) {
     const td = document.createElement('td');
     const value = row[key];
     if (key === 'priority') {
-      td.appendChild(badge(value, 'badge-' + String(value || 'unknown').toLowerCase()));
+      td.appendChild(badge(priorityLabel(value), 'badge-' + cssToken(priorityLabel(value) || 'unknown')));
     } else if (key === 'status') {
       td.appendChild(statusBadge(value));
     } else if (key === 'sla_breach' && value === 'Yes') {
       td.appendChild(badge('Delayed', 'badge-delayed'));
     } else {
-      td.textContent = valueOrDash(value);
+      td.textContent = displayValue(key, value);
     }
     tr.appendChild(td);
   }
@@ -362,7 +445,7 @@
       return 'row-delayed';
     }
     if (row.priority) {
-      return 'row-' + String(row.priority).toLowerCase();
+      return 'row-' + cssToken(priorityLabel(row.priority));
     }
     return '';
   }
@@ -371,7 +454,7 @@
     return rows.filter(function (row) {
       return matchesSelect('statusFilter', row.status) &&
         matchesSelect('warehouseFilter', row.warehouse) &&
-        matchesSelect('vendorFilter', row.supplier_vendor) &&
+        matchesSelect('vendorFilter', row.supplier_vendor_group || normalizeVendorName(row.supplier_vendor)) &&
         matchesDateRange(row.reporting_time_ist);
     });
   }
@@ -384,7 +467,7 @@
 
   function applyPriorityFilters(rows) {
     return rows.filter(function (row) {
-      return matchesSelect('priorityFilter', row.priority);
+      return matchesSelect('priorityFilter', priorityLabel(row.priority));
     });
   }
 
@@ -396,7 +479,7 @@
   function matchesDateRange(value) {
     const from = document.getElementById('fromDateFilter').value;
     const to = document.getElementById('toDateFilter').value;
-    const date = String(value || '').slice(0, 10);
+    const date = comparableDate(value);
     if (from && (!date || date < from)) {
       return false;
     }
@@ -409,8 +492,8 @@
   function objectToMetricRows(object) {
     return Object.keys(object).map(function (key) {
       return {
-        metric: key.replace(/_/g, ' '),
-        value: object[key]
+        metric: metricLabel(key),
+        value: metricValue(key, object[key])
       };
     });
   }
@@ -420,7 +503,7 @@
     const headers = view.columns.map(function (column) { return column[0]; });
     const labels = view.columns.map(function (column) { return column[1]; });
     const csvRows = [labels].concat(state.currentRows.map(function (row) {
-      return headers.map(function (key) { return row[key] === undefined ? '' : row[key]; });
+      return headers.map(function (key) { return row[key] === undefined ? '' : displayValue(key, row[key]); });
     }));
     const csv = csvRows.map(function (row) {
       return row.map(csvEscape).join(',');
@@ -452,6 +535,135 @@
       return '-';
     }
     return String(value);
+  }
+
+  function displayValue(key, value) {
+    if (value === '' || value === null || value === undefined) {
+      return '-';
+    }
+    if (/_days$/i.test(key)) {
+      return formatDecimal(value);
+    }
+    if (key === 'priority') {
+      return priorityLabel(value);
+    }
+    if (dateTimeKeyPattern.test(key) || looksLikeDateTime(value)) {
+      return formatDateTime(value) || valueOrDash(value);
+    }
+    return String(value);
+  }
+
+  function formatDateTime(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+      return '';
+    }
+
+    let match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{2}))?/);
+    if (match) {
+      return [
+        pad2(match[3]),
+        pad2(match[2]),
+        normalizeYear(match[1])
+      ].join('-') + (match[4] ? ' ' + pad2(match[4]) + ':' + pad2(match[5]) : '');
+    }
+
+    match = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})(?:[, T]+(\d{1,2}):(\d{2}))?/);
+    if (match) {
+      return [
+        pad2(match[1]),
+        pad2(match[2]),
+        normalizeYear(match[3])
+      ].join('-') + (match[4] ? ' ' + pad2(match[4]) + ':' + pad2(match[5]) : '');
+    }
+    return '';
+  }
+
+  function comparableDate(value) {
+    const text = String(value || '').trim();
+    let match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (match) {
+      return [match[1], pad2(match[2]), pad2(match[3])].join('-');
+    }
+    match = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
+    if (match) {
+      const year = String(match[3]).length === 2 ? '20' + match[3] : match[3];
+      return [year, pad2(match[2]), pad2(match[1])].join('-');
+    }
+    return '';
+  }
+
+  function looksLikeDateTime(value) {
+    const text = String(value || '').trim();
+    return /^\d{4}-\d{1,2}-\d{1,2}[T\s]\d{1,2}:\d{2}/.test(text) ||
+      /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}(?:[, T]+\d{1,2}:\d{2})?/.test(text);
+  }
+
+  function formatDecimal(value) {
+    if (value === '' || value === null || value === undefined || isNaN(Number(value))) {
+      return '-';
+    }
+    return Number(value).toFixed(2);
+  }
+
+  function priorityLabel(value) {
+    return String(value || '').trim() === 'Unknown' ? 'Inventory missing' : String(value || '').trim();
+  }
+
+  function normalizeVendorName(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+      return '';
+    }
+    const cleaned = text
+      .replace(/&/g, ' and ')
+      .replace(/[^A-Za-z0-9]+/g, ' ')
+      .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|LLC|INC|CO|COMPANY)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) {
+      return '';
+    }
+    return cleaned.toLowerCase().replace(/\b[a-z0-9]/g, function (char) {
+      return char.toUpperCase();
+    });
+  }
+
+  function metricLabel(key) {
+    const labels = {
+      avg_unloading_to_grn_days: 'Avg unload to GRN',
+      avg_grn_to_putaway_days: 'Avg GRN to putaway',
+      avg_dock_to_stock_days: 'Avg dock to stock',
+      sla_breach_count: 'SLA breaches',
+      p0_pending_count: 'P0 pending',
+      p1_pending_count: 'P1 pending',
+      inventory_missing_priority_count: 'Inventory missing',
+      completed_count: 'Completed',
+      pending_grn_count: 'Pending GRN',
+      pending_putaway_count: 'Pending putaway',
+      last_refresh_ist: 'Last refresh'
+    };
+    return labels[key] || key.replace(/_/g, ' ');
+  }
+
+  function metricValue(key, value) {
+    if (/_days$/i.test(key)) {
+      return formatDays(value);
+    }
+    return displayValue(key, value);
+  }
+
+  function cssToken(value) {
+    return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
+  }
+
+  function normalizeYear(value) {
+    const text = String(value || '');
+    return text.length === 2 ? '20' + text : text;
+  }
+
+  function pad2(value) {
+    return String(value).padStart(2, '0');
   }
 
   function setText(id, value) {
