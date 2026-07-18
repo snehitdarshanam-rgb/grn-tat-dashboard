@@ -143,6 +143,14 @@ main {
   font-size: 28px;
 }
 
+.metric small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(7, minmax(130px, 1fr));

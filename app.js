@@ -286,8 +286,11 @@
   function renderMetrics() {
     const summary = state.data.sla_summary || {};
     setText('metricUnloadGrn', formatDays(summary.avg_unloading_to_grn_days));
+    setText('metricUnloadGrnHours', formatHoursMinutes(summary.avg_unloading_to_grn_days));
     setText('metricGrnPutaway', formatDays(summary.avg_grn_to_putaway_days));
+    setText('metricGrnPutawayHours', formatHoursMinutes(summary.avg_grn_to_putaway_days));
     setText('metricDockStock', formatDays(summary.avg_dock_to_stock_days));
+    setText('metricDockStockHours', formatHoursMinutes(summary.avg_dock_to_stock_days));
     setText('metricBreaches', valueOrDash(summary.sla_breach_count));
     setText('metricP0', valueOrDash(summary.p0_pending_count));
     setText('metricP1', valueOrDash(summary.p1_pending_count));
@@ -528,6 +531,16 @@
       return '-';
     }
     return Number(value).toFixed(2) + ' d';
+  }
+
+  function formatHoursMinutes(value) {
+    if (value === '' || value === null || value === undefined || isNaN(Number(value))) {
+      return '-';
+    }
+    const totalMinutes = Math.round(Number(value) * 24 * 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return String(hours).padStart(2, '0') + ':' + pad2(minutes) + ' hh:mm';
   }
 
   function valueOrDash(value) {
