@@ -143,6 +143,16 @@ main {
   font-size: 28px;
 }
 
+.metric-wide {
+  grid-column: span 2;
+}
+
+.metric-wide strong {
+  font-size: 16px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
 .metric small {
   display: block;
   margin-top: 4px;
@@ -153,7 +163,7 @@ main {
 
 .filters {
   display: grid;
-  grid-template-columns: repeat(7, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin: 0 0 16px;
   padding: 14px;
@@ -180,6 +190,52 @@ input {
   border: 1px solid var(--line);
   border-radius: 6px;
   font: inherit;
+}
+
+select[multiple] {
+  height: 112px;
+  padding: 6px 10px;
+}
+
+.current-view {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 2fr;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.current-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.current-metrics div {
+  min-height: 72px;
+  padding: 12px;
+  background: #fbfcfd;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.current-metrics span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.current-metrics strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
 }
 
 .tabs {
@@ -363,7 +419,8 @@ tr:last-child td {
 
 @media (max-width: 1100px) {
   .summary-band,
-  .filters {
+  .filters,
+  .current-view {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
   }
 }
@@ -380,7 +437,12 @@ tr:last-child td {
   }
 
   .summary-band,
-  .filters {
+  .filters,
+  .current-view {
     grid-template-columns: 1fr;
+  }
+
+  .metric-wide {
+    grid-column: auto;
   }
 }

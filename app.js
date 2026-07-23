@@ -5,7 +5,9 @@
     data: sampleData,
     activeTab: 'overall',
     currentRows: [],
-    loading: false
+    loading: false,
+    detailsLoaded: false,
+    filtersInitialized: false
   };
   const dateTimeKeyPattern = /(date|time|timestamp|fetched_at|last_refresh|pending_since|generated_at)/i;
 
@@ -25,10 +27,14 @@
         ['unloading_start_time_ist', 'Unloading start'],
         ['grn_time_ist', 'GRN time'],
         ['putaway_time_ist', 'Putaway time'],
-        ['reporting_to_unloading_days', 'Report to unload days'],
-        ['unloading_to_grn_days', 'Unload to GRN days'],
-        ['grn_to_putaway_days', 'GRN to putaway days'],
-        ['dock_to_stock_days', 'Dock to stock days'],
+        ['unloading_to_grn_minutes', 'Unload to GRN'],
+        ['grn_to_putaway_minutes', 'GRN to putaway'],
+        ['unloading_to_putaway_minutes', 'Unload to putaway'],
+        ['dock_to_stock_minutes', 'Dock to stock'],
+        ['boxes_received', 'Boxes'],
+        ['received_quantity', 'Received qty'],
+        ['vehicle_type', 'Vehicle type'],
+        ['priority', 'Priority'],
         ['status', 'Status'],
         ['sla_breach', 'SLA breach'],
         ['match_status', 'Match']
@@ -42,6 +48,8 @@
         ['invoice_number', 'Invoice'],
         ['sku_code', 'SKU code'],
         ['sku_name', 'SKU name'],
+        ['priority', 'Priority'],
+        ['warehouse', 'Warehouse'],
         ['pending_stage', 'Pending stage'],
         ['pending_since_ist', 'Pending since'],
         ['age_hours', 'Age hours'],
@@ -69,13 +77,15 @@
         ['pending_grn_quantity', 'Pending GRN qty'],
         ['invoice_number', 'Invoice'],
         ['vehicle_number', 'Vehicle'],
+        ['vehicle_type', 'Vehicle type'],
+        ['warehouse', 'Warehouse'],
         ['recommended_action', 'Recommended action'],
         ['match_status', 'Match']
       ]
     },
     sla: {
       title: 'SLA Summary',
-      rows: function () { return objectToMetricRows(state.data.sla_summary || {}); },
+      rows: function () { return objectToMetricRows(currentSummary()); },
       columns: [
         ['metric', 'Metric'],
         ['value', 'Value']
@@ -135,9 +145,11 @@
       });
     });
 
-    ['priorityFilter', 'statusFilter', 'ageingFilter', 'warehouseFilter', 'vendorFilter',
-      'fromDateFilter', 'toDateFilter'].forEach(function (id) {
-      document.getElementById(id).addEventListener('change', render);
+    ['monthFilter', 'priorityFilter', 'statusFilter', 'ageingFilter', 'warehouseFilter', 'vendorFilter'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', function () {
+        normalizeAllSelection(id);
+        render();
+      });
     });
   }
 
@@ -146,18 +158,27 @@
       return;
     }
     state.loading = true;
+    state.detailsLoaded = false;
     setConnectionStatus('Loading', 'status-neutral');
 
     try {
       if (!config.apiUrl) {
         if (config.useSampleDataWhenApiMissing) {
           state.data = sampleData;
+          state.detailsLoaded = true;
           setConnectionStatus('Sample data', 'status-neutral');
         } else {
           throw new Error('Missing Apps Script API URL');
         }
       } else {
-        state.data = await loadApiData();
+        const summary = await loadApiData('summary');
+        state.data = Object.assign({}, state.data, summary);
+        populateFilters();
+        setConnectionStatus('Loading details', 'status-neutral');
+        render();
+        const details = await loadApiData('details');
+        state.data = details;
+        state.detailsLoaded = true;
         setConnectionStatus('Live data', 'status-ok');
       }
       populateFilters();
@@ -166,6 +187,7 @@
       console.error(error);
       if (config.useSampleDataWhenApiMissing) {
         state.data = sampleData;
+        state.detailsLoaded = true;
         populateFilters();
         render();
       }
@@ -175,8 +197,8 @@
     }
   }
 
-  async function loadApiData() {
-    const url = buildApiUrl();
+  async function loadApiData(view) {
+    const url = buildApiUrl(null, view);
     try {
       const response = await fetch(url, { cache: 'no-store' });
       if (!response.ok) {
@@ -188,11 +210,11 @@
       }
       return payload;
     } catch (error) {
-      return fetchJsonp();
+      return fetchJsonp(view);
     }
   }
 
-  function buildApiUrl(callbackName) {
+  function buildApiUrl(callbackName, view) {
     const url = new URL(config.apiUrl);
     if (config.readToken) {
       url.searchParams.set('token', config.readToken);
@@ -200,11 +222,14 @@
     if (callbackName) {
       url.searchParams.set('callback', callbackName);
     }
+    if (view) {
+      url.searchParams.set('view', view);
+    }
     url.searchParams.set('_', String(Date.now()));
     return url.toString();
   }
 
-  function fetchJsonp() {
+  function fetchJsonp(view) {
     return new Promise(function (resolve, reject) {
       const callbackName = 'grnDashboardCallback_' + Date.now();
       const script = document.createElement('script');
@@ -235,33 +260,61 @@
         }
       }
 
-      script.src = buildApiUrl(callbackName);
+      script.src = buildApiUrl(callbackName, view);
       document.body.appendChild(script);
     });
   }
 
   function populateFilters() {
-    setOptions('priorityFilter', uniqueValues(state.data.priority_grn_queue || [], 'priority', priorityLabel));
-    setOptions('statusFilter', uniqueValues(state.data.overall_tat || [], 'status'));
-    setOptions('ageingFilter', uniqueValues(state.data.pending_actions || [], 'ageing_bucket'));
-    setOptions('warehouseFilter', uniqueValues(state.data.overall_tat || [], 'warehouse'));
-    setOptions('vendorFilter', uniqueValues(state.data.overall_tat || [], 'supplier_vendor_group', function (value, row) {
+    const rows = filterSourceRows();
+    setOptions('monthFilter', monthValues(rows), {
+      labels: monthLabels(rows),
+      defaultValue: currentMonthValue()
+    });
+    setOptions('priorityFilter', uniqueValues(rows, 'priority', priorityLabel));
+    setOptions('statusFilter', uniqueValues(rows, 'status'));
+    setOptions('ageingFilter', uniqueValues(rows, 'ageing_bucket'));
+    setOptions('warehouseFilter', uniqueValues(rows, 'warehouse'));
+    setOptions('vendorFilter', uniqueValues(rows, 'supplier_vendor_group', function (value, row) {
       return value || normalizeVendorName(row.supplier_vendor);
     }));
   }
 
-  function setOptions(id, values) {
+  function filterSourceRows() {
+    const summaryRows = state.data.overall_tat_summary || [];
+    const detailRows = state.data.overall_tat || [];
+    if (detailRows.length) {
+      return detailRows
+        .concat(state.data.pending_actions || [])
+        .concat(state.data.priority_grn_queue || []);
+    }
+    return summaryRows;
+  }
+
+  function setOptions(id, values, options) {
+    options = options || {};
     const select = document.getElementById(id);
-    const selected = select.value;
+    const selected = selectedValues(id);
     select.innerHTML = '<option value="">All</option>';
     values.forEach(function (value) {
       const option = document.createElement('option');
       option.value = value;
-      option.textContent = value;
+      option.textContent = options.labels && options.labels[value] ? options.labels[value] : value;
       select.appendChild(option);
     });
-    if (values.indexOf(selected) !== -1) {
-      select.value = selected;
+    const validSelected = selected.filter(function (value) { return values.indexOf(value) !== -1; });
+    if (validSelected.length) {
+      Array.prototype.forEach.call(select.options, function (option) {
+        option.selected = validSelected.indexOf(option.value) !== -1;
+      });
+    } else if (!state.filtersInitialized && options.defaultValue && values.indexOf(options.defaultValue) !== -1) {
+      select.value = options.defaultValue;
+    } else {
+      select.value = '';
+    }
+    normalizeAllSelection(id);
+    if (id === 'vendorFilter') {
+      state.filtersInitialized = true;
     }
   }
 
@@ -277,6 +330,60 @@
     return Object.keys(seen).sort();
   }
 
+  function monthValues(rows) {
+    const seen = {};
+    rows.forEach(function (row) {
+      const month = monthValue(row.reporting_time_ist);
+      if (month) {
+        seen[month] = true;
+      }
+    });
+    return Object.keys(seen).sort().reverse();
+  }
+
+  function monthLabels(rows) {
+    const labels = {};
+    monthValues(rows).forEach(function (value) {
+      const parts = value.split('-');
+      const date = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+      labels[value] = date.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+    });
+    return labels;
+  }
+
+  function currentMonthValue() {
+    const now = new Date();
+    return now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+  }
+
+  function monthValue(value) {
+    const date = comparableDate(value);
+    return date ? date.slice(0, 7) : '';
+  }
+
+  function selectedValues(id) {
+    const select = document.getElementById(id);
+    if (!select) {
+      return [];
+    }
+    return Array.prototype.slice.call(select.selectedOptions || [])
+      .map(function (option) { return option.value; })
+      .filter(function (value) { return value !== ''; });
+  }
+
+  function normalizeAllSelection(id) {
+    const select = document.getElementById(id);
+    if (!select || !select.multiple) {
+      return;
+    }
+    const chosen = selectedValues(id);
+    Array.prototype.forEach.call(select.options, function (option) {
+      if (option.value === '') {
+        option.selected = chosen.length === 0;
+      }
+    });
+  }
+
   function render() {
     renderMetrics();
     renderMeta();
@@ -284,18 +391,19 @@
   }
 
   function renderMetrics() {
-    const summary = state.data.sla_summary || {};
-    setText('metricUnloadGrn', formatDays(summary.avg_unloading_to_grn_days));
-    setText('metricUnloadGrnHours', formatHoursMinutes(summary.avg_unloading_to_grn_days));
-    setText('metricGrnPutaway', formatDays(summary.avg_grn_to_putaway_days));
-    setText('metricGrnPutawayHours', formatHoursMinutes(summary.avg_grn_to_putaway_days));
-    setText('metricDockStock', formatDays(summary.avg_dock_to_stock_days));
-    setText('metricDockStockHours', formatHoursMinutes(summary.avg_dock_to_stock_days));
-    setText('metricBreaches', valueOrDash(summary.sla_breach_count));
-    setText('metricP0', valueOrDash(summary.p0_pending_count));
-    setText('metricP1', valueOrDash(summary.p1_pending_count));
-    setText('metricPendingGrn', valueOrDash(summary.pending_grn_count));
-    setText('metricPendingPutaway', valueOrDash(summary.pending_putaway_count));
+    const summary = currentSummary();
+    setText('metricUnloadPutaway', formatMinutes(summary.avg_unloading_to_putaway_minutes));
+    setText('metricUnloadGrn', formatMinutes(summary.avg_unloading_to_grn_minutes));
+    setText('metricGrnPutaway', formatMinutes(summary.avg_grn_to_putaway_minutes));
+    setText('metricBoxes', formatNumber(summary.total_inward_boxes));
+    setText('metricQty', formatNumber(summary.total_qty_received));
+    setText('metricVehicles', formatCount(summary.vehicle_unloaded_count));
+    setText('metricVehicleTypes', summary.vehicle_type_breakup || '-');
+    setText('currentRowsCount', formatCount(summary.line_count));
+    setText('currentCompleted', formatCount(summary.completed_count));
+    setText('currentPendingGrn', formatCount(summary.pending_grn_count));
+    setText('currentPendingPutaway', formatCount(summary.pending_putaway_count));
+    setText('currentBreaches', formatCount(summary.sla_breach_count));
   }
 
   function renderMeta() {
@@ -309,6 +417,7 @@
     const rows = view.rows();
     state.currentRows = rows;
     document.getElementById('viewTitle').textContent = view.title;
+    setText('currentViewTitle', view.title);
 
     const host = document.getElementById('tableHost');
     host.innerHTML = '';
@@ -319,7 +428,7 @@
     if (!rows.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.textContent = 'No rows available';
+      empty.textContent = 'No rows match the selected filters';
       host.appendChild(empty);
       return;
     }
@@ -352,17 +461,17 @@
   }
 
   function renderSlaView(host) {
-    const summary = state.data.sla_summary || {};
+    const summary = currentSummary();
     const urgent = Number(summary.p0_pending_count || 0) + Number(summary.p1_pending_count || 0);
     const cards = [
-      ['Avg unload to GRN', formatDays(summary.avg_unloading_to_grn_days), 'Clean average, excluding negative source-date errors'],
-      ['Avg GRN to putaway', formatDays(summary.avg_grn_to_putaway_days), 'From matched or approved tracker fallback rows'],
-      ['Avg dock to stock', formatDays(summary.avg_dock_to_stock_days), 'Completed lines only'],
-      ['SLA breaches', valueOrDash(summary.sla_breach_count), 'Open or completed lines crossing configured SLA'],
-      ['Urgent GRN pending', valueOrDash(urgent), 'P0 plus P1 pending GRN lines'],
-      ['Inventory missing', valueOrDash(summary.inventory_missing_priority_count), 'Pending SKUs not found in active FG inventory'],
-      ['Completed', valueOrDash(summary.completed_count), 'Lines fully docked to stock'],
-      ['Pending GRN / Putaway', valueOrDash(summary.pending_grn_count) + ' / ' + valueOrDash(summary.pending_putaway_count), 'Open operational handoffs']
+      ['Avg unload to putaway', formatMinutes(summary.avg_unloading_to_putaway_minutes), 'Filtered rows using real timestamp minutes'],
+      ['Avg unload to GRN', formatMinutes(summary.avg_unloading_to_grn_minutes), 'Filtered rows using Uniware received timestamp'],
+      ['Avg GRN to putaway', formatMinutes(summary.avg_grn_to_putaway_minutes), 'Filtered matched putaway rows'],
+      ['SLA breaches', formatCount(summary.sla_breach_count), 'Open or completed lines crossing configured SLA'],
+      ['Urgent GRN pending', formatCount(urgent), 'P0 plus P1 pending GRN lines'],
+      ['Vehicles unloaded', formatCount(summary.vehicle_unloaded_count), 'Distinct reporting date plus vehicle number'],
+      ['Completed', formatCount(summary.completed_count), 'Lines fully docked to stock'],
+      ['Pending GRN / Putaway', formatCount(summary.pending_grn_count) + ' / ' + formatCount(summary.pending_putaway_count), 'Open operational handoffs']
     ];
 
     const panel = document.createElement('div');
@@ -454,42 +563,165 @@
   }
 
   function applyOverallFilters(rows) {
-    return rows.filter(function (row) {
-      return matchesSelect('statusFilter', row.status) &&
-        matchesSelect('warehouseFilter', row.warehouse) &&
-        matchesSelect('vendorFilter', row.supplier_vendor_group || normalizeVendorName(row.supplier_vendor)) &&
-        matchesDateRange(row.reporting_time_ist);
-    });
+    return rows.filter(matchesGlobalFilters);
   }
 
   function applyPendingFilters(rows) {
-    return rows.filter(function (row) {
-      return matchesSelect('ageingFilter', row.ageing_bucket);
-    });
+    return rows.filter(matchesGlobalFilters);
   }
 
   function applyPriorityFilters(rows) {
-    return rows.filter(function (row) {
-      return matchesSelect('priorityFilter', priorityLabel(row.priority));
+    return rows.filter(matchesGlobalFilters);
+  }
+
+  function matchesGlobalFilters(row) {
+    return matchesMonth(row) &&
+      matchesMultiSelect('priorityFilter', priorityLabel(row.priority)) &&
+      matchesMultiSelect('statusFilter', row.status) &&
+      matchesMultiSelect('ageingFilter', row.ageing_bucket) &&
+      matchesMultiSelect('warehouseFilter', row.warehouse) &&
+      matchesMultiSelect('vendorFilter', row.supplier_vendor_group || normalizeVendorName(row.supplier_vendor));
+  }
+
+  function matchesMonth(row) {
+    const selected = document.getElementById('monthFilter').value;
+    return !selected || monthValue(row.reporting_time_ist) === selected;
+  }
+
+  function matchesMultiSelect(id, value) {
+    const selected = selectedValues(id);
+    if (!selected.length) {
+      return true;
+    }
+    return selected.indexOf(String(value || '').trim()) !== -1;
+  }
+
+  function filteredOverallRows() {
+    const rows = state.detailsLoaded && (state.data.overall_tat || []).length ?
+      state.data.overall_tat :
+      (state.data.overall_tat_summary || state.data.overall_tat || []);
+    return applyOverallFilters(rows);
+  }
+
+  function currentSummary() {
+    const rows = filteredOverallRows();
+    if (rows.length || state.filtersInitialized) {
+      return summarizeRows(rows);
+    }
+    return normalizeBackendSummary(state.data.sla_summary || {});
+  }
+
+  function summarizeRows(rows) {
+    const completed = rows.filter(function (row) { return row.status === 'Completed'; });
+    const pendingGrn = rows.filter(function (row) { return row.status === 'Pending GRN'; });
+    const pendingPutaway = rows.filter(function (row) { return row.status === 'Pending putaway'; });
+    const p0Pending = pendingGrn.filter(function (row) { return priorityLabel(row.priority) === 'P0'; });
+    const p1Pending = pendingGrn.filter(function (row) { return priorityLabel(row.priority) === 'P1'; });
+    const inventoryMissing = pendingGrn.filter(function (row) { return priorityLabel(row.priority) === 'Inventory missing'; });
+    return {
+      line_count: rows.length,
+      avg_unloading_to_grn_minutes: averageMinutes(rows, 'unloading_to_grn_minutes'),
+      avg_grn_to_putaway_minutes: averageMinutes(rows, 'grn_to_putaway_minutes'),
+      avg_unloading_to_putaway_minutes: averageMinutes(rows, 'unloading_to_putaway_minutes'),
+      avg_dock_to_stock_minutes: averageMinutes(completed, 'dock_to_stock_minutes'),
+      total_inward_boxes: sumField(rows, 'boxes_received'),
+      total_qty_received: sumField(rows, 'received_quantity'),
+      vehicle_unloaded_count: vehicleCount(rows),
+      vehicle_type_breakup: vehicleTypeBreakup(rows),
+      sla_breach_count: rows.filter(function (row) { return row.sla_breach === 'Yes'; }).length,
+      p0_pending_count: p0Pending.length,
+      p1_pending_count: p1Pending.length,
+      inventory_missing_priority_count: inventoryMissing.length,
+      completed_count: completed.length,
+      pending_grn_count: pendingGrn.length,
+      pending_putaway_count: pendingPutaway.length,
+      last_refresh_ist: (state.data.meta || {}).last_refresh_ist || (state.data.sla_summary || {}).last_refresh_ist || ''
+    };
+  }
+
+  function normalizeBackendSummary(summary) {
+    return {
+      line_count: Number(summary.completed_count || 0) + Number(summary.pending_grn_count || 0) + Number(summary.pending_putaway_count || 0),
+      avg_unloading_to_grn_minutes: summary.avg_unloading_to_grn_minutes || daysToMinutes(summary.avg_unloading_to_grn_days),
+      avg_grn_to_putaway_minutes: summary.avg_grn_to_putaway_minutes || daysToMinutes(summary.avg_grn_to_putaway_days),
+      avg_unloading_to_putaway_minutes: summary.avg_unloading_to_putaway_minutes || '',
+      avg_dock_to_stock_minutes: summary.avg_dock_to_stock_minutes || daysToMinutes(summary.avg_dock_to_stock_days),
+      total_inward_boxes: summary.total_inward_boxes || '',
+      total_qty_received: summary.total_qty_received || '',
+      vehicle_unloaded_count: summary.vehicle_unloaded_count || '',
+      vehicle_type_breakup: summary.vehicle_type_breakup || '',
+      sla_breach_count: summary.sla_breach_count || '',
+      p0_pending_count: summary.p0_pending_count || '',
+      p1_pending_count: summary.p1_pending_count || '',
+      inventory_missing_priority_count: summary.inventory_missing_priority_count || '',
+      completed_count: summary.completed_count || '',
+      pending_grn_count: summary.pending_grn_count || '',
+      pending_putaway_count: summary.pending_putaway_count || '',
+      last_refresh_ist: summary.last_refresh_ist || ''
+    };
+  }
+
+  function averageMinutes(rows, key) {
+    const values = rows
+      .map(function (row) { return Number(row[key]); })
+      .filter(function (value) { return !isNaN(value) && value >= 0; });
+    if (!values.length) {
+      return '';
+    }
+    const total = values.reduce(function (sum, value) { return sum + value; }, 0);
+    return Math.round(total / values.length);
+  }
+
+  function sumField(rows, key) {
+    const total = rows.reduce(function (sum, row) {
+      const value = Number(String(row[key] || '').replace(/,/g, ''));
+      return isNaN(value) ? sum : sum + value;
+    }, 0);
+    return Math.round(total * 100) / 100;
+  }
+
+  function vehicleCount(rows) {
+    const seen = {};
+    rows.forEach(function (row) {
+      const vehicle = cleanVehicle(row.vehicle_number);
+      const date = comparableDate(row.reporting_time_ist || row.unloading_start_time_ist);
+      if (vehicle && date) {
+        seen[date + '|' + vehicle] = true;
+      }
     });
+    return Object.keys(seen).length;
   }
 
-  function matchesSelect(id, value) {
-    const selected = document.getElementById(id).value;
-    return !selected || String(value || '') === selected;
+  function vehicleTypeBreakup(rows) {
+    const vehicleTypes = {};
+    rows.forEach(function (row) {
+      const vehicle = cleanVehicle(row.vehicle_number);
+      const date = comparableDate(row.reporting_time_ist || row.unloading_start_time_ist);
+      if (!vehicle || !date) {
+        return;
+      }
+      const type = String(row.vehicle_type || 'Unknown').trim() || 'Unknown';
+      vehicleTypes[date + '|' + vehicle + '|' + type] = type;
+    });
+    const counts = {};
+    Object.keys(vehicleTypes).forEach(function (key) {
+      const type = vehicleTypes[key];
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return Object.keys(counts).sort().map(function (type) {
+      return type + ': ' + counts[type];
+    }).join(' | ');
   }
 
-  function matchesDateRange(value) {
-    const from = document.getElementById('fromDateFilter').value;
-    const to = document.getElementById('toDateFilter').value;
-    const date = comparableDate(value);
-    if (from && (!date || date < from)) {
-      return false;
+  function cleanVehicle(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  function daysToMinutes(value) {
+    if (value === '' || value === null || value === undefined || isNaN(Number(value))) {
+      return '';
     }
-    if (to && (!date || date > to)) {
-      return false;
-    }
-    return true;
+    return Math.round(Number(value) * 24 * 60);
   }
 
   function objectToMetricRows(object) {
@@ -533,14 +765,29 @@
     return Number(value).toFixed(2) + ' d';
   }
 
-  function formatHoursMinutes(value) {
+  function formatMinutes(value) {
     if (value === '' || value === null || value === undefined || isNaN(Number(value))) {
       return '-';
     }
-    const totalMinutes = Math.round(Number(value) * 24 * 60);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return String(hours).padStart(2, '0') + ':' + pad2(minutes) + ' hh:mm';
+    const totalMinutes = Math.round(Number(value));
+    const sign = totalMinutes < 0 ? '-' : '';
+    const absoluteMinutes = Math.abs(totalMinutes);
+    const hours = Math.floor(absoluteMinutes / 60);
+    const minutes = absoluteMinutes % 60;
+    return sign + String(hours).padStart(2, '0') + ':' + pad2(minutes);
+  }
+
+  function formatNumber(value) {
+    if (value === '' || value === null || value === undefined) {
+      return '-';
+    }
+    const number = Number(String(value).replace(/,/g, '').trim());
+    if (isNaN(number)) {
+      return String(value);
+    }
+    return number.toLocaleString('en-IN', {
+      maximumFractionDigits: 2
+    });
   }
 
   function valueOrDash(value) {
@@ -553,6 +800,9 @@
   function displayValue(key, value) {
     if (value === '' || value === null || value === undefined) {
       return '-';
+    }
+    if (/_minutes$/i.test(key)) {
+      return formatMinutes(value);
     }
     if (/_days$/i.test(key)) {
       return formatDecimal(value);
@@ -619,6 +869,21 @@
     return Number(value).toFixed(2);
   }
 
+  function formatCount(value) {
+    if (value === '' || value === null || value === undefined) {
+      return '-';
+    }
+    if (!isNaN(Number(value))) {
+      return String(Math.round(Number(value)));
+    }
+    const text = String(value).trim();
+    const accidentalDate = text.match(/^(\d{1,2})[-/](\d{1,2})[-/]1900(?:[ T,]+\d{1,2}:\d{2})?$/);
+    if (accidentalDate && Number(accidentalDate[2]) === 1) {
+      return String(Number(accidentalDate[1]));
+    }
+    return text;
+  }
+
   function priorityLabel(value) {
     return String(value || '').trim() === 'Unknown' ? 'Inventory missing' : String(value || '').trim();
   }
@@ -647,6 +912,15 @@
       avg_unloading_to_grn_days: 'Avg unload to GRN',
       avg_grn_to_putaway_days: 'Avg GRN to putaway',
       avg_dock_to_stock_days: 'Avg dock to stock',
+      avg_unloading_to_grn_minutes: 'Avg unload to GRN',
+      avg_grn_to_putaway_minutes: 'Avg GRN to putaway',
+      avg_unloading_to_putaway_minutes: 'Avg unload to putaway',
+      avg_dock_to_stock_minutes: 'Avg dock to stock',
+      total_inward_boxes: 'Total inward boxes',
+      total_qty_received: 'Total Qty received',
+      vehicle_unloaded_count: 'Vehicles unloaded',
+      vehicle_type_breakup: 'Vehicle type breakup',
+      line_count: 'Rows',
       sla_breach_count: 'SLA breaches',
       p0_pending_count: 'P0 pending',
       p1_pending_count: 'P1 pending',
@@ -660,8 +934,17 @@
   }
 
   function metricValue(key, value) {
+    if (/_minutes$/i.test(key)) {
+      return formatMinutes(value);
+    }
     if (/_days$/i.test(key)) {
       return formatDays(value);
+    }
+    if (key === 'total_inward_boxes' || key === 'total_qty_received') {
+      return formatNumber(value);
+    }
+    if (/_count$/i.test(key)) {
+      return formatCount(value);
     }
     return displayValue(key, value);
   }

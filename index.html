@@ -19,83 +19,88 @@
     </header>
 
     <main>
-      <section class="summary-band" aria-label="SLA summary">
+      <section class="summary-band" aria-label="Landing KPI summary">
+        <div class="metric">
+          <span>Avg unload to putaway</span>
+          <strong id="metricUnloadPutaway">-</strong>
+        </div>
         <div class="metric">
           <span>Avg unload to GRN</span>
           <strong id="metricUnloadGrn">-</strong>
-          <small id="metricUnloadGrnHours">-</small>
         </div>
         <div class="metric">
           <span>Avg GRN to putaway</span>
           <strong id="metricGrnPutaway">-</strong>
-          <small id="metricGrnPutawayHours">-</small>
         </div>
         <div class="metric">
-          <span>Avg dock to stock</span>
-          <strong id="metricDockStock">-</strong>
-          <small id="metricDockStockHours">-</small>
+          <span>Total inward boxes</span>
+          <strong id="metricBoxes">-</strong>
         </div>
         <div class="metric">
-          <span>SLA breaches</span>
-          <strong id="metricBreaches">-</strong>
+          <span>Total Qty received</span>
+          <strong id="metricQty">-</strong>
         </div>
         <div class="metric">
-          <span>P0 pending</span>
-          <strong id="metricP0">-</strong>
+          <span>Vehicles unloaded</span>
+          <strong id="metricVehicles">-</strong>
         </div>
-        <div class="metric">
-          <span>P1 pending</span>
-          <strong id="metricP1">-</strong>
-        </div>
-        <div class="metric">
-          <span>Pending GRN</span>
-          <strong id="metricPendingGrn">-</strong>
-        </div>
-        <div class="metric">
-          <span>Pending putaway</span>
-          <strong id="metricPendingPutaway">-</strong>
+        <div class="metric metric-wide">
+          <span>Vehicle type breakup</span>
+          <strong id="metricVehicleTypes">-</strong>
         </div>
       </section>
 
       <section class="filters" aria-label="Dashboard filters">
         <label>
+          Month
+          <select id="monthFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
           Priority
-          <select id="priorityFilter">
+          <select id="priorityFilter" multiple size="4">
             <option value="">All</option>
           </select>
         </label>
         <label>
           Status
-          <select id="statusFilter">
+          <select id="statusFilter" multiple size="4">
             <option value="">All</option>
           </select>
         </label>
         <label>
           Ageing
-          <select id="ageingFilter">
+          <select id="ageingFilter" multiple size="4">
             <option value="">All</option>
           </select>
         </label>
         <label>
           Warehouse
-          <select id="warehouseFilter">
+          <select id="warehouseFilter" multiple size="4">
             <option value="">All</option>
           </select>
         </label>
         <label>
           Vendor
-          <select id="vendorFilter">
+          <select id="vendorFilter" multiple size="4">
             <option value="">All</option>
           </select>
         </label>
-        <label>
-          From
-          <input id="fromDateFilter" type="date">
-        </label>
-        <label>
-          To
-          <input id="toDateFilter" type="date">
-        </label>
+      </section>
+
+      <section class="current-view" aria-label="Current filtered view">
+        <div>
+          <p class="eyebrow">Current View</p>
+          <h2 id="currentViewTitle">Filtered inward performance</h2>
+        </div>
+        <div class="current-metrics">
+          <div><span>Rows</span><strong id="currentRowsCount">-</strong></div>
+          <div><span>Completed</span><strong id="currentCompleted">-</strong></div>
+          <div><span>Pending GRN</span><strong id="currentPendingGrn">-</strong></div>
+          <div><span>Pending putaway</span><strong id="currentPendingPutaway">-</strong></div>
+          <div><span>SLA breaches</span><strong id="currentBreaches">-</strong></div>
+        </div>
       </section>
 
       <nav class="tabs" aria-label="Dashboard views">
