@@ -7,7 +7,9 @@
     currentRows: [],
     loading: false,
     detailsLoaded: false,
-    filtersInitialized: false
+    filtersInitialized: false,
+    sidebarPinned: true,
+    sidebarHidden: false
   };
   const dateTimeKeyPattern = /(date|time|timestamp|fetched_at|last_refresh|pending_since|generated_at)/i;
 
@@ -125,7 +127,9 @@
   };
 
   document.addEventListener('DOMContentLoaded', function () {
+    restoreSidebarState();
     bindEvents();
+    applySidebarState();
     loadData();
     const refreshMs = Number(config.refreshMinutes || 30) * 60 * 1000;
     window.setInterval(loadData, refreshMs);
@@ -134,6 +138,10 @@
   function bindEvents() {
     document.getElementById('refreshButton').addEventListener('click', loadData);
     document.getElementById('exportButton').addEventListener('click', exportCurrentRows);
+    document.getElementById('filterToggle').addEventListener('click', toggleFilterPanel);
+    document.getElementById('pinSidebarButton').addEventListener('click', toggleSidebarPin);
+    document.getElementById('hideSidebarButton').addEventListener('click', hideSidebar);
+    document.getElementById('showSidebarButton').addEventListener('click', showSidebar);
 
     document.querySelectorAll('.tab').forEach(function (tab) {
       tab.addEventListener('click', function () {
@@ -148,9 +156,54 @@
     ['monthFilter', 'priorityFilter', 'statusFilter', 'ageingFilter', 'warehouseFilter', 'vendorFilter'].forEach(function (id) {
       document.getElementById(id).addEventListener('change', function () {
         normalizeAllSelection(id);
+        updateFilterSummary();
         render();
       });
     });
+  }
+
+  function restoreSidebarState() {
+    try {
+      state.sidebarPinned = window.localStorage.getItem('grn_sidebar_pinned') !== 'no';
+    } catch (error) {
+      state.sidebarPinned = true;
+    }
+  }
+
+  function toggleFilterPanel() {
+    const panel = document.getElementById('filterPanel');
+    const toggle = document.getElementById('filterToggle');
+    const shouldOpen = panel.hasAttribute('hidden');
+    panel.toggleAttribute('hidden', !shouldOpen);
+    toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  }
+
+  function toggleSidebarPin() {
+    state.sidebarPinned = !state.sidebarPinned;
+    state.sidebarHidden = false;
+    try {
+      window.localStorage.setItem('grn_sidebar_pinned', state.sidebarPinned ? 'yes' : 'no');
+    } catch (error) {}
+    applySidebarState();
+  }
+
+  function hideSidebar() {
+    state.sidebarHidden = true;
+    applySidebarState();
+  }
+
+  function showSidebar() {
+    state.sidebarHidden = false;
+    applySidebarState();
+  }
+
+  function applySidebarState() {
+    const shell = document.getElementById('dashboardShell');
+    const pinButton = document.getElementById('pinSidebarButton');
+    shell.classList.toggle('is-sidebar-hidden', state.sidebarHidden);
+    shell.classList.toggle('is-sidebar-floating', !state.sidebarPinned);
+    pinButton.setAttribute('aria-pressed', state.sidebarPinned ? 'true' : 'false');
+    pinButton.textContent = state.sidebarPinned ? 'Pinned' : 'Pin';
   }
 
   async function loadData() {
@@ -315,6 +368,7 @@
     normalizeAllSelection(id);
     if (id === 'vendorFilter') {
       state.filtersInitialized = true;
+      updateFilterSummary();
     }
   }
 
@@ -387,7 +441,31 @@
   function render() {
     renderMetrics();
     renderMeta();
+    updateFilterSummary();
     renderTable();
+  }
+
+  function updateFilterSummary() {
+    const summary = [];
+    const month = document.getElementById('monthFilter');
+    if (month && month.value) {
+      summary.push(month.options[month.selectedIndex] ? month.options[month.selectedIndex].textContent : month.value);
+    } else {
+      summary.push('All months');
+    }
+    [
+      ['priorityFilter', 'priority'],
+      ['statusFilter', 'status'],
+      ['ageingFilter', 'ageing'],
+      ['warehouseFilter', 'warehouse'],
+      ['vendorFilter', 'vendor']
+    ].forEach(function (item) {
+      const count = selectedValues(item[0]).length;
+      if (count) {
+        summary.push(count + ' ' + item[1]);
+      }
+    });
+    setText('filterSummary', summary.join(' | '));
   }
 
   function renderMetrics() {

@@ -7,120 +7,154 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Mosaic Wellness inward operations</p>
-        <h1>GRN TAT: Dock to Stock</h1>
+    <div id="dashboardShell" class="dashboard-shell">
+      <aside id="sidePanel" class="side-panel" aria-label="Dashboard controls">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Mosaic Wellness</p>
+            <h1>GRN TAT</h1>
+          </div>
+          <div class="panel-actions">
+            <button id="pinSidebarButton" class="icon-button" type="button" aria-pressed="true" title="Pin panel">Pin</button>
+            <button id="hideSidebarButton" class="icon-button" type="button" title="Hide panel">Hide</button>
+          </div>
+        </div>
+
+        <nav class="tabs" aria-label="Dashboard views">
+          <button class="tab is-active" data-tab="overall">Overall TAT</button>
+          <button class="tab" data-tab="pending">Pending Actions</button>
+          <button class="tab" data-tab="priority">Priority Queue</button>
+          <button class="tab" data-tab="sla">SLA Summary</button>
+          <button class="tab" data-tab="sources">Source Health</button>
+        </nav>
+
+        <section class="filter-card" aria-label="Dashboard filters">
+          <button id="filterToggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filterPanel">
+            Filters
+            <span id="filterSummary">Current month</span>
+          </button>
+          <div id="filterPanel" class="filter-panel" hidden>
+            <label>
+              Month
+              <select id="monthFilter">
+                <option value="">All</option>
+              </select>
+            </label>
+            <label>
+              Priority
+              <select id="priorityFilter" multiple size="4">
+                <option value="">All</option>
+              </select>
+            </label>
+            <label>
+              Status
+              <select id="statusFilter" multiple size="4">
+                <option value="">All</option>
+              </select>
+            </label>
+            <label>
+              Ageing
+              <select id="ageingFilter" multiple size="4">
+                <option value="">All</option>
+              </select>
+            </label>
+            <label>
+              Warehouse
+              <select id="warehouseFilter" multiple size="4">
+                <option value="">All</option>
+              </select>
+            </label>
+            <label>
+              Vendor
+              <select id="vendorFilter" multiple size="4">
+                <option value="">All</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <button id="showSidebarButton" class="button button-light" type="button">Controls</button>
+          <div>
+            <p class="eyebrow">Mosaic Wellness inward operations</p>
+            <h2>GRN TAT: Dock to Stock</h2>
+          </div>
+          <div class="top-actions">
+            <span id="connectionStatus" class="status-pill status-neutral">Loading</span>
+            <button id="refreshButton" class="button">Refresh</button>
+          </div>
+        </header>
+
+        <main>
+          <section class="kpi-section" aria-label="KPI summary">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">KPI Summary</p>
+                <h2>Landing performance</h2>
+              </div>
+              <p id="lastRefresh">Last refresh: -</p>
+            </div>
+            <div class="summary-band">
+              <div class="metric metric-primary">
+                <span>Avg unload to putaway</span>
+                <strong id="metricUnloadPutaway">-</strong>
+              </div>
+              <div class="metric">
+                <span>Avg unload to GRN</span>
+                <strong id="metricUnloadGrn">-</strong>
+              </div>
+              <div class="metric">
+                <span>Avg GRN to putaway</span>
+                <strong id="metricGrnPutaway">-</strong>
+              </div>
+              <div class="metric">
+                <span>Total inward boxes</span>
+                <strong id="metricBoxes">-</strong>
+              </div>
+              <div class="metric">
+                <span>Total Qty received</span>
+                <strong id="metricQty">-</strong>
+              </div>
+              <div class="metric">
+                <span>Vehicles unloaded</span>
+                <strong id="metricVehicles">-</strong>
+              </div>
+              <div class="metric metric-wide">
+                <span>Vehicle type breakup</span>
+                <strong id="metricVehicleTypes">-</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="detail-section" aria-label="Detailed dashboard view">
+            <section class="current-view" aria-label="Current filtered view">
+              <div>
+                <p class="eyebrow">Current View</p>
+                <h2 id="currentViewTitle">Filtered inward performance</h2>
+              </div>
+              <div class="current-metrics">
+                <div><span>Rows</span><strong id="currentRowsCount">-</strong></div>
+                <div><span>Completed</span><strong id="currentCompleted">-</strong></div>
+                <div><span>Pending GRN</span><strong id="currentPendingGrn">-</strong></div>
+                <div><span>Pending putaway</span><strong id="currentPendingPutaway">-</strong></div>
+                <div><span>SLA breaches</span><strong id="currentBreaches">-</strong></div>
+              </div>
+            </section>
+
+            <section class="view-header">
+              <div>
+                <h2 id="viewTitle">Overall Dock to Stock TAT</h2>
+              </div>
+              <button id="exportButton" class="button">Export CSV</button>
+            </section>
+
+            <section id="tableHost" class="table-host" aria-live="polite"></section>
+          </section>
+        </main>
       </div>
-      <div class="top-actions">
-        <span id="connectionStatus" class="status-pill status-neutral">Loading</span>
-        <button id="refreshButton" class="button">Refresh</button>
-      </div>
-    </header>
-
-    <main>
-      <section class="summary-band" aria-label="Landing KPI summary">
-        <div class="metric">
-          <span>Avg unload to putaway</span>
-          <strong id="metricUnloadPutaway">-</strong>
-        </div>
-        <div class="metric">
-          <span>Avg unload to GRN</span>
-          <strong id="metricUnloadGrn">-</strong>
-        </div>
-        <div class="metric">
-          <span>Avg GRN to putaway</span>
-          <strong id="metricGrnPutaway">-</strong>
-        </div>
-        <div class="metric">
-          <span>Total inward boxes</span>
-          <strong id="metricBoxes">-</strong>
-        </div>
-        <div class="metric">
-          <span>Total Qty received</span>
-          <strong id="metricQty">-</strong>
-        </div>
-        <div class="metric">
-          <span>Vehicles unloaded</span>
-          <strong id="metricVehicles">-</strong>
-        </div>
-        <div class="metric metric-wide">
-          <span>Vehicle type breakup</span>
-          <strong id="metricVehicleTypes">-</strong>
-        </div>
-      </section>
-
-      <section class="filters" aria-label="Dashboard filters">
-        <label>
-          Month
-          <select id="monthFilter">
-            <option value="">All</option>
-          </select>
-        </label>
-        <label>
-          Priority
-          <select id="priorityFilter" multiple size="4">
-            <option value="">All</option>
-          </select>
-        </label>
-        <label>
-          Status
-          <select id="statusFilter" multiple size="4">
-            <option value="">All</option>
-          </select>
-        </label>
-        <label>
-          Ageing
-          <select id="ageingFilter" multiple size="4">
-            <option value="">All</option>
-          </select>
-        </label>
-        <label>
-          Warehouse
-          <select id="warehouseFilter" multiple size="4">
-            <option value="">All</option>
-          </select>
-        </label>
-        <label>
-          Vendor
-          <select id="vendorFilter" multiple size="4">
-            <option value="">All</option>
-          </select>
-        </label>
-      </section>
-
-      <section class="current-view" aria-label="Current filtered view">
-        <div>
-          <p class="eyebrow">Current View</p>
-          <h2 id="currentViewTitle">Filtered inward performance</h2>
-        </div>
-        <div class="current-metrics">
-          <div><span>Rows</span><strong id="currentRowsCount">-</strong></div>
-          <div><span>Completed</span><strong id="currentCompleted">-</strong></div>
-          <div><span>Pending GRN</span><strong id="currentPendingGrn">-</strong></div>
-          <div><span>Pending putaway</span><strong id="currentPendingPutaway">-</strong></div>
-          <div><span>SLA breaches</span><strong id="currentBreaches">-</strong></div>
-        </div>
-      </section>
-
-      <nav class="tabs" aria-label="Dashboard views">
-        <button class="tab is-active" data-tab="overall">Overall TAT</button>
-        <button class="tab" data-tab="pending">Pending Actions</button>
-        <button class="tab" data-tab="priority">Priority Queue</button>
-        <button class="tab" data-tab="sla">SLA Summary</button>
-        <button class="tab" data-tab="sources">Source Health</button>
-      </nav>
-
-      <section class="view-header">
-        <div>
-          <h2 id="viewTitle">Overall Dock to Stock TAT</h2>
-          <p id="lastRefresh">Last refresh: -</p>
-        </div>
-        <button id="exportButton" class="button">Export CSV</button>
-      </section>
-
-      <section id="tableHost" class="table-host" aria-live="polite"></section>
-    </main>
+    </div>
 
     <script src="config.js"></script>
     <script src="sample-data.js"></script>
