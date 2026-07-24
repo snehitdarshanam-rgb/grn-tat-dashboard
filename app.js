@@ -764,7 +764,9 @@
 
   function averageMinutes(rows, key) {
     const values = rows
-      .map(function (row) { return Number(rowMinutes(row, key)); })
+      .map(function (row) { return rowMinutes(row, key); })
+      .filter(hasMinuteValue)
+      .map(function (value) { return Number(value); })
       .filter(function (value) { return !isNaN(value) && value >= 0; });
     if (!values.length) {
       return '';
@@ -775,20 +777,25 @@
 
   function rowMinutes(row, key) {
     const value = row[key];
-    if (value !== '' && value !== null && value !== undefined && !isNaN(Number(value))) {
+    if (hasMinuteValue(value)) {
       return value;
     }
     if (key === 'arrival_to_grn_minutes') {
-      const dockToStock = Number(row.dock_to_stock_minutes);
-      const grnToPutaway = Number(row.grn_to_putaway_minutes);
-      if (!isNaN(dockToStock) && !isNaN(grnToPutaway)) {
+      const dockToStock = hasMinuteValue(row.dock_to_stock_minutes) ? Number(row.dock_to_stock_minutes) : NaN;
+      const grnToPutaway = hasMinuteValue(row.grn_to_putaway_minutes) ? Number(row.grn_to_putaway_minutes) : NaN;
+      if (!isNaN(dockToStock) && !isNaN(grnToPutaway) && dockToStock >= grnToPutaway) {
         return dockToStock - grnToPutaway;
       }
     }
     if (key === 'arrival_to_putaway_minutes') {
-      return row.dock_to_stock_minutes;
+      return hasMinuteValue(row.dock_to_stock_minutes) ? row.dock_to_stock_minutes : '';
     }
-    return value;
+    return '';
+  }
+
+  function hasMinuteValue(value) {
+    return value !== '' && value !== null && value !== undefined &&
+      String(value).trim() !== '' && !isNaN(Number(value));
   }
 
   function sumMinuteValues(left, right) {
@@ -802,7 +809,7 @@
   function deriveSummaryArrivalToGrn(summary) {
     const dockToStock = summary.avg_dock_to_stock_minutes || daysToMinutes(summary.avg_dock_to_stock_days);
     const grnToPutaway = summary.avg_grn_to_putaway_minutes || daysToMinutes(summary.avg_grn_to_putaway_days);
-    if (dockToStock !== '' && grnToPutaway !== '') {
+    if (hasMinuteValue(dockToStock) && hasMinuteValue(grnToPutaway) && Number(dockToStock) >= Number(grnToPutaway)) {
       return Number(dockToStock) - Number(grnToPutaway);
     }
     return '';
