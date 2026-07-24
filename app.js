@@ -29,10 +29,9 @@
         ['unloading_start_time_ist', 'Unloading start'],
         ['grn_time_ist', 'GRN time'],
         ['putaway_time_ist', 'Putaway time'],
-        ['unloading_to_grn_minutes', 'Unload to GRN'],
+        ['arrival_to_grn_minutes', 'Arrival to GRN'],
         ['grn_to_putaway_minutes', 'GRN to putaway'],
-        ['unloading_to_putaway_minutes', 'Unload to putaway'],
-        ['dock_to_stock_minutes', 'Dock to stock'],
+        ['arrival_to_putaway_minutes', 'Arrival to putaway'],
         ['boxes_received', 'Boxes'],
         ['received_quantity', 'Received qty'],
         ['vehicle_type', 'Vehicle type'],
@@ -225,7 +224,14 @@
         }
       } else {
         const summary = await loadApiData('summary');
-        state.data = Object.assign({}, state.data, summary);
+        state.data = Object.assign({}, summary, {
+          overall_tat: [],
+          pending_actions: [],
+          priority_grn_queue: [],
+          source_status: [],
+          error_log: [],
+          row_audit: []
+        });
         populateFilters();
         setConnectionStatus('Loading details', 'status-neutral');
         render();
@@ -470,8 +476,8 @@
 
   function renderMetrics() {
     const summary = currentSummary();
-    setText('metricUnloadPutaway', formatMinutes(summary.avg_unloading_to_putaway_minutes));
-    setText('metricUnloadGrn', formatMinutes(summary.avg_unloading_to_grn_minutes));
+    setText('metricUnloadPutaway', formatMinutes(summary.avg_arrival_to_putaway_minutes));
+    setText('metricUnloadGrn', formatMinutes(summary.avg_arrival_to_grn_minutes));
     setText('metricGrnPutaway', formatMinutes(summary.avg_grn_to_putaway_minutes));
     setText('metricBoxes', formatNumber(summary.total_inward_boxes));
     setText('metricQty', formatNumber(summary.total_qty_received));
@@ -501,6 +507,13 @@
     host.innerHTML = '';
     if (state.activeTab === 'sla') {
       renderSlaView(host);
+      return;
+    }
+    if (!state.detailsLoaded) {
+      const loading = document.createElement('div');
+      loading.className = 'empty-state';
+      loading.textContent = 'Detailed rows are loading. KPI summary is ready.';
+      host.appendChild(loading);
       return;
     }
     if (!rows.length) {
@@ -542,8 +555,8 @@
     const summary = currentSummary();
     const urgent = Number(summary.p0_pending_count || 0) + Number(summary.p1_pending_count || 0);
     const cards = [
-      ['Avg unload to putaway', formatMinutes(summary.avg_unloading_to_putaway_minutes), 'Filtered rows using real timestamp minutes'],
-      ['Avg unload to GRN', formatMinutes(summary.avg_unloading_to_grn_minutes), 'Filtered rows using Uniware received timestamp'],
+      ['Avg Arrival to Putaway', formatMinutes(summary.avg_arrival_to_putaway_minutes), 'Avg Arrival to GRN plus Avg GRN to Putaway'],
+      ['Avg Arrival to GRN', formatMinutes(summary.avg_arrival_to_grn_minutes), 'Reporting or arrival timestamp to Uniware GRN received timestamp'],
       ['Avg GRN to putaway', formatMinutes(summary.avg_grn_to_putaway_minutes), 'Filtered matched putaway rows'],
       ['SLA breaches', formatCount(summary.sla_breach_count), 'Open or completed lines crossing configured SLA'],
       ['Urgent GRN pending', formatCount(urgent), 'P0 plus P1 pending GRN lines'],
@@ -698,8 +711,13 @@
     const inventoryMissing = pendingGrn.filter(function (row) { return priorityLabel(row.priority) === 'Inventory missing'; });
     return {
       line_count: rows.length,
+      avg_arrival_to_grn_minutes: averageMinutes(rows, 'arrival_to_grn_minutes'),
       avg_unloading_to_grn_minutes: averageMinutes(rows, 'unloading_to_grn_minutes'),
       avg_grn_to_putaway_minutes: averageMinutes(rows, 'grn_to_putaway_minutes'),
+      avg_arrival_to_putaway_minutes: sumMinuteValues(
+        averageMinutes(rows, 'arrival_to_grn_minutes'),
+        averageMinutes(rows, 'grn_to_putaway_minutes')
+      ),
       avg_unloading_to_putaway_minutes: averageMinutes(rows, 'unloading_to_putaway_minutes'),
       avg_dock_to_stock_minutes: averageMinutes(completed, 'dock_to_stock_minutes'),
       total_inward_boxes: sumField(rows, 'boxes_received'),
@@ -720,8 +738,13 @@
   function normalizeBackendSummary(summary) {
     return {
       line_count: Number(summary.completed_count || 0) + Number(summary.pending_grn_count || 0) + Number(summary.pending_putaway_count || 0),
+      avg_arrival_to_grn_minutes: summary.avg_arrival_to_grn_minutes || deriveSummaryArrivalToGrn(summary),
       avg_unloading_to_grn_minutes: summary.avg_unloading_to_grn_minutes || daysToMinutes(summary.avg_unloading_to_grn_days),
       avg_grn_to_putaway_minutes: summary.avg_grn_to_putaway_minutes || daysToMinutes(summary.avg_grn_to_putaway_days),
+      avg_arrival_to_putaway_minutes: summary.avg_arrival_to_putaway_minutes || sumMinuteValues(
+        summary.avg_arrival_to_grn_minutes || deriveSummaryArrivalToGrn(summary),
+        summary.avg_grn_to_putaway_minutes || daysToMinutes(summary.avg_grn_to_putaway_days)
+      ),
       avg_unloading_to_putaway_minutes: summary.avg_unloading_to_putaway_minutes || '',
       avg_dock_to_stock_minutes: summary.avg_dock_to_stock_minutes || daysToMinutes(summary.avg_dock_to_stock_days),
       total_inward_boxes: summary.total_inward_boxes || '',
@@ -741,13 +764,48 @@
 
   function averageMinutes(rows, key) {
     const values = rows
-      .map(function (row) { return Number(row[key]); })
+      .map(function (row) { return Number(rowMinutes(row, key)); })
       .filter(function (value) { return !isNaN(value) && value >= 0; });
     if (!values.length) {
       return '';
     }
     const total = values.reduce(function (sum, value) { return sum + value; }, 0);
     return Math.round(total / values.length);
+  }
+
+  function rowMinutes(row, key) {
+    const value = row[key];
+    if (value !== '' && value !== null && value !== undefined && !isNaN(Number(value))) {
+      return value;
+    }
+    if (key === 'arrival_to_grn_minutes') {
+      const dockToStock = Number(row.dock_to_stock_minutes);
+      const grnToPutaway = Number(row.grn_to_putaway_minutes);
+      if (!isNaN(dockToStock) && !isNaN(grnToPutaway)) {
+        return dockToStock - grnToPutaway;
+      }
+    }
+    if (key === 'arrival_to_putaway_minutes') {
+      return row.dock_to_stock_minutes;
+    }
+    return value;
+  }
+
+  function sumMinuteValues(left, right) {
+    if (left === '' || right === '' || left === null || right === null ||
+        left === undefined || right === undefined || isNaN(Number(left)) || isNaN(Number(right))) {
+      return '';
+    }
+    return Math.round(Number(left) + Number(right));
+  }
+
+  function deriveSummaryArrivalToGrn(summary) {
+    const dockToStock = summary.avg_dock_to_stock_minutes || daysToMinutes(summary.avg_dock_to_stock_days);
+    const grnToPutaway = summary.avg_grn_to_putaway_minutes || daysToMinutes(summary.avg_grn_to_putaway_days);
+    if (dockToStock !== '' && grnToPutaway !== '') {
+      return Number(dockToStock) - Number(grnToPutaway);
+    }
+    return '';
   }
 
   function sumField(rows, key) {
@@ -990,8 +1048,10 @@
       avg_unloading_to_grn_days: 'Avg unload to GRN',
       avg_grn_to_putaway_days: 'Avg GRN to putaway',
       avg_dock_to_stock_days: 'Avg dock to stock',
+      avg_arrival_to_grn_minutes: 'Avg Arrival to GRN',
       avg_unloading_to_grn_minutes: 'Avg unload to GRN',
       avg_grn_to_putaway_minutes: 'Avg GRN to putaway',
+      avg_arrival_to_putaway_minutes: 'Avg Arrival to Putaway',
       avg_unloading_to_putaway_minutes: 'Avg unload to putaway',
       avg_dock_to_stock_minutes: 'Avg dock to stock',
       total_inward_boxes: 'Total inward boxes',
